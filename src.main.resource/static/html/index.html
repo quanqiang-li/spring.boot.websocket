@@ -10,8 +10,12 @@
 	<input type="submit" value="send" onclick="send()">
 </body>
 <script>
+	if (!"WebSocket" in window) {
+		alert("您的浏览器不支持WebSocket");
+	}
+
 	var msg = document.getElementById("msg");
-	var wsServer = 'ws://127.0.0.1:8081/ws';
+	var wsServer = 'ws://localhost:8081/ws?nickname=lisi';
 	var websocket = new WebSocket(wsServer);
 	//监听连接打开
 	websocket.onopen = function(evt) {
