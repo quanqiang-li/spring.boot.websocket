@@ -1,6 +1,7 @@
 package spring.boot.websocket.service;
 
 import java.io.IOException;
+import java.util.Date;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -26,7 +27,7 @@ import com.alibaba.fastjson.JSON;
 
 import io.netty.handler.codec.http.HttpHeaders;
 import io.netty.handler.timeout.IdleStateEvent;
-import spring.boot.websocket.vo.Room;
+import spring.boot.websocket.vo.RoomInfo;
 
 /**
  * 
@@ -46,8 +47,8 @@ public class MyWebSocket {
 	// 使用map来收集session，key为roomName，value为同一个房间的用户集合
 	// concurrentMap的key不存在时报错，不是返回null
 	public static final Map<String, CopyOnWriteArraySet<MyWebSocket>> rooms = new ConcurrentHashMap<String, CopyOnWriteArraySet<MyWebSocket>>();
-	//聊天室的基本信息
-	public static final Map<String, Room> roomInfo = new ConcurrentHashMap<String, Room>();
+	// 聊天室的基本信息
+	public static final Map<String, RoomInfo> roomInfos = new ConcurrentHashMap<String, RoomInfo>();
 	// 定义一个记录客户端的聊天昵称
 	private String nickname;
 	// 与某个客户端的连接会话，需要通过它来给客户端发送数据
@@ -67,10 +68,10 @@ public class MyWebSocket {
 	 */
 	@OnOpen
 	public void onOpen(Session session, HttpHeaders headers, ParameterMap parameterMap) throws IOException {
-		log.info("新的连接加入,sessionId:{},websocket实例{},昵称{},ip{}", session.id(), this, nickname, ip);
 		this.session = session;
 		this.nickname = parameterMap.getParameter("nickname");
 		this.ip = session.remoteAddress().toString();
+		log.info("新的连接加入,sessionId:{},websocket实例{},昵称{},ip{}", session.id(), this, nickname, ip);
 		// 初始MyWebSocket对象放置到NO_ROOM房间
 		if (!rooms.containsKey(NO_ROOM)) {
 			// 创建房间不存在时，创建房间
@@ -78,7 +79,12 @@ public class MyWebSocket {
 			// 添加
 			webSocketSet.add(this);
 			rooms.put(NO_ROOM, webSocketSet);
-			roomInfo.put(NO_ROOM, null);
+			RoomInfo roomInfo = new RoomInfo();
+			roomInfo.createDate = new Date();
+			roomInfo.createUser = "admin";
+			roomInfo.roomName = NO_ROOM;
+
+			roomInfos.put(NO_ROOM, roomInfo);
 		} else {
 			// 房间已存在，直接添加用户到相应的房间
 			rooms.get(NO_ROOM).add(this);
@@ -99,17 +105,16 @@ public class MyWebSocket {
 		log.info("断开连接,sessionId:{},websocket实例{},昵称{},ip{}", session.id(), this, nickname, ip);
 		Set<Entry<String, CopyOnWriteArraySet<MyWebSocket>>> entrySet = rooms.entrySet();
 		Iterator<Entry<String, CopyOnWriteArraySet<MyWebSocket>>> iterator = entrySet.iterator();
-		//遍历房间
+		// 遍历房间
 		while (iterator.hasNext()) {
 			Map.Entry<String, CopyOnWriteArraySet<MyWebSocket>> entry = iterator.next();
+			String roomName = entry.getKey();
 			CopyOnWriteArraySet<MyWebSocket> set = entry.getValue();
-			Iterator<MyWebSocket> iterator2 = set.iterator();
-			//遍历人员
-			while (iterator2.hasNext()) {
-				MyWebSocket myWebSocket = iterator2.next();
-				if(myWebSocket.equals(this)){
-					iterator2.remove();
-				}
+			set.remove(this);
+			// 没有人员的房间,清理掉
+			if (set.isEmpty()) {
+				rooms.remove(roomName);
+				roomInfos.remove(roomName);
 			}
 
 		}
@@ -137,14 +142,55 @@ public class MyWebSocket {
 	 */
 	@OnMessage
 	public void onMessage(Session session, String message) {
-		session.sendText(message);
-		log.info("接收客户端消息:{}",message);
-		//创建并加入房间"createAndenter:{'roomName':'aaaa','createUser':'wsdcv'}"
-		if(message.startsWith("createAndenter")){
-			Room room = JSON.parseObject(message.substring(15), Room.class);
-			roomInfo.put(room.roomName, room);
+		log.info("接收客户端{}消息:{}", session.id(),message);
+		// 创建并加入房间"createAndEnter:{'roomName':'aaaa','createUser':'wsdcv'}"
+		if (message.startsWith("createAndEnter")) {
+			// 创建房间
+			RoomInfo room = JSON.parseObject(message.substring(15), RoomInfo.class);
+			room.createDate = new Date();
+			roomInfos.put(room.roomName, room);
+			// 加入房间
+			CopyOnWriteArraySet<MyWebSocket> webSocketSet = new CopyOnWriteArraySet<MyWebSocket>();
+			webSocketSet.add(this);
+			rooms.put(room.roomName, webSocketSet);
+			//退出默认房间
+			rooms.get(NO_ROOM).remove(this);
 		}
-		//发送聊天内容
+		// 加入房间"enter:{'roomName':'aaaa','createUser':'wsdcv'}"
+		if (message.startsWith("enter")) {
+			RoomInfo room = JSON.parseObject(message.substring(6), RoomInfo.class);
+			CopyOnWriteArraySet<MyWebSocket> copyOnWriteArraySet = rooms.get(room.roomName);
+			// 加入房间[TODO 如果不存在先创建在加入]
+			if(copyOnWriteArraySet==null){
+				room.createDate = new Date();
+				roomInfos.put(room.roomName, room);
+				copyOnWriteArraySet = new CopyOnWriteArraySet<MyWebSocket>();
+				rooms.put(room.roomName, copyOnWriteArraySet);
+			}
+			copyOnWriteArraySet.add(this);
+			//退出默认房间
+			rooms.get(NO_ROOM).remove(this);
+		}
+		// 退出房间"quit:{'roomName':'aaaa'}"
+		if (message.startsWith("quit")) {
+			RoomInfo room = JSON.parseObject(message.substring(5), RoomInfo.class);
+			// 退出房间
+			rooms.get(room.roomName).remove(this);
+			//加入默认房间
+			rooms.get(NO_ROOM).add(this);
+		}
+
+		// 房间内消息"msg:{'roomName':'aaaa','nickname':'a1','msg':'helloworld'}"
+		if (message.startsWith("msg")) {
+			RoomInfo room = JSON.parseObject(message.substring(4), RoomInfo.class);
+			// 房间内消息
+			broadcast(room.roomName,room.nickname, room.msg);
+		}
+		//房间列表"roomList"
+		if (message.startsWith("roomList")) {
+			session.sendText(JSON.toJSONString(roomInfos));
+		}
+
 	}
 
 	/**
@@ -188,12 +234,12 @@ public class MyWebSocket {
 	}
 
 	// 按照房间名进行广播
-	public void broadcast(String roomName, String msg) throws Exception {
+	public void broadcast(String roomName,String nickname, String msg) {
 		CopyOnWriteArraySet<MyWebSocket> set = rooms.get(roomName);
 		Iterator<MyWebSocket> iterator2 = set.iterator();
 		while (iterator2.hasNext()) {
 			MyWebSocket myWebSocket = iterator2.next();
-			myWebSocket.session.sendText(msg);
+			myWebSocket.session.sendText(nickname+":" + msg);
 		}
 
 	}

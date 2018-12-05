@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>不问为谁而来</title>
+<script type="text/javascript" src="index.js"></script>
+</head>
+<body>
+	<div>
+		当前在线人数:<span id="total"></span>
+	</div>
+	<div>
+		第一步:<input type="text" id="nickName"> <input type="button"
+			value="确认昵称" onclick="confirmNickName()">
+	</div>
+	<div>
+		<div>
+			第二步:<input type="text" id="roomName"> <input type="button"
+				value="确认房间" onclick="confirmRoomName()">
+		</div>
+		第三步:<input type="text" id="text"> <input type="submit"
+			value="发送" onclick="send()"><br>
+		聊天室:<div id="msg" style="height: 400px;width: 400px;"></div>
+	</div>
+
+</body>
+
+</html>

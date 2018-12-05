@@ -6,10 +6,12 @@ import java.util.Date;
  * @author liqq
  *
  */
-public class Room {
+public class RoomInfo {
 
 	public String roomName;
 	public String createUser;
 	public String password;	
 	public Date createDate;
+	public String nickname;
+	public String msg;
 }
