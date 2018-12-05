@@ -29,7 +29,7 @@ function confirmNickName() {
 var websocket;
 // 创建连接
 function createConn() {
-	var wsServer = "ws://localhost:8081/ws?nickname=" + nickName;
+	var wsServer = "ws://192.168.20.51:8081/ws?nickname=" + nickName;
 	websocket = new WebSocket(wsServer);
 	// 监听连接打开
 	websocket.onopen = function(evt) {
